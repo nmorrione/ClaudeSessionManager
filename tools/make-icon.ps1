@@ -1,8 +1,8 @@
-# Genera ClaudeSessionManager\app.ico (e un'anteprima PNG) disegnando l'icona in vettoriale con WPF.
-# Uso:  powershell -ExecutionPolicy Bypass -File tools\make-icon.ps1
+﻿# Genera ClaudeSessionManager\app.ico (e un'anteprima PNG) disegnando l'icona in vettoriale con WPF.
+# Uso:  powershell -STA -ExecutionPolicy Bypass -File tools\make-icon.ps1
 #
-# Disegno: quadrato arrotondato color terracotta con una "scintilla" bianca (Claude)
-# e, in basso a destra, un badge bianco con due frecce su/giù (import/export).
+# Disegno: quadrato arrotondato color terracotta con una scintilla bianca a raggi arrotondati
+# e, in basso a destra, un badge bianco con due frecce su/giù (export/import).
 
 Add-Type -AssemblyName PresentationCore, WindowsBase
 
@@ -19,43 +19,27 @@ $orange = New-Brush '#D97757'
 $dark   = New-Brush '#B85C3D'
 $white  = New-Brush '#FFFFFF'
 
-function Get-Spark([double]$cx, [double]$cy, [double]$r) {
-    # 12 raggi a petalo, lunghi e corti alternati.
-    $g = [System.Windows.Media.StreamGeometry]::new()
-    $g.FillRule = [System.Windows.Media.FillRule]::Nonzero
-    $ctx = $g.Open()
-    for ($i = 0; $i -lt 12; $i++) {
-        $a   = $i * [Math]::PI / 6 - [Math]::PI / 2
-        $len = if ($i % 2 -eq 0) { $r } else { $r * 0.74 }
-        $w   = $r * 0.105
-        $tip = [System.Windows.Point]::new($cx + [Math]::Cos($a) * $len, $cy + [Math]::Sin($a) * $len)
-        $mid = $len * 0.55
-        $mx  = $cx + [Math]::Cos($a) * $mid; $my = $cy + [Math]::Sin($a) * $mid
-        $px  = -[Math]::Sin($a) * $w;        $py = [Math]::Cos($a) * $w
-        $ctx.BeginFigure([System.Windows.Point]::new($cx, $cy), $true, $true)
-        $ctx.LineTo([System.Windows.Point]::new($mx + $px, $my + $py), $true, $true)
-        $ctx.LineTo($tip, $true, $true)
-        $ctx.LineTo([System.Windows.Point]::new($mx - $px, $my - $py), $true, $true)
+# Raggi della scintilla: angolo (gradi), lunghezza (0..1), spessore (0..1), relativi al raggio.
+$rays = @(
+    @(-90, 1.00, 0.17), @(-61, 0.76, 0.13), @(-31, 0.93, 0.15), @( -1, 0.72, 0.12),
+    @( 29, 0.96, 0.16), @( 58, 0.79, 0.13), @( 89, 0.99, 0.17), @(119, 0.74, 0.12),
+    @(150, 0.94, 0.15), @(181, 0.77, 0.13), @(211, 0.90, 0.15), @(240, 0.71, 0.12)
+)
+
+function Draw-Spark($dc, [double]$cx, [double]$cy, [double]$r) {
+    foreach ($ray in $rays) {
+        $a   = $ray[0] * [Math]::PI / 180
+        $pen = [System.Windows.Media.Pen]::new($white, $ray[2] * $r * 1.5)
+        $pen.StartLineCap = [System.Windows.Media.PenLineCap]::Round
+        $pen.EndLineCap   = [System.Windows.Media.PenLineCap]::Round
+        $from = [System.Windows.Point]::new($cx, $cy)
+        $to   = [System.Windows.Point]::new($cx + [Math]::Cos($a) * $r * $ray[1], $cy + [Math]::Sin($a) * $r * $ray[1])
+        $dc.DrawLine($pen, $from, $to)
     }
-    $ctx.Close(); $g.Freeze(); $g
 }
 
-function Get-Arrow([double]$x, [double]$yFrom, [double]$yTo, [double]$w) {
-    # Freccia verticale piena da yFrom a yTo (punta su yTo).
-    $dir   = [Math]::Sign($yTo - $yFrom)
-    $headH = $w * 1.15
-    $neck  = $yTo - $dir * $headH
-    $g = [System.Windows.Media.StreamGeometry]::new()
-    $ctx = $g.Open()
-    $ctx.BeginFigure([System.Windows.Point]::new($x - $w * 0.28, $yFrom), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x - $w * 0.28, $neck), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x - $w * 0.75, $neck), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x, $yTo), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x + $w * 0.75, $neck), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x + $w * 0.28, $neck), $true, $true)
-    $ctx.LineTo([System.Windows.Point]::new($x + $w * 0.28, $yFrom), $true, $true)
-    $ctx.Close(); $g.Freeze(); $g
-}
+# Frecce su/giù disegnate in un riquadro 100x100, poi spostate e scalate sul badge.
+$arrows = [System.Windows.Media.Geometry]::Parse('M34 86V38H20L38 14L56 38H42V86Z M58 14V62H44L62 86L80 62H66V14Z')
 
 function Render-Png([int]$size) {
     $s  = $size / 256.0
@@ -67,13 +51,17 @@ function Render-Png([int]$size) {
     $dc.DrawRoundedRectangle($orange, $null, [System.Windows.Rect]::new(8, 8, 240, 240), 52, 52)
 
     # Scintilla
-    $dc.DrawGeometry($white, $null, (Get-Spark 104 104 78))
+    Draw-Spark $dc 96 96 70
 
     # Badge import/export
-    $dc.DrawEllipse($dark,  $null, [System.Windows.Point]::new(184, 184), 66, 66)
-    $dc.DrawEllipse($white, $null, [System.Windows.Point]::new(184, 184), 58, 58)
-    $dc.DrawGeometry($orange, $null, (Get-Arrow 160 220 146 30))   # su  = export
-    $dc.DrawGeometry($orange, $null, (Get-Arrow 208 148 222 30))   # giù = import
+    $dc.DrawEllipse($dark,  $null, [System.Windows.Point]::new(184, 184), 62, 62)
+    $dc.DrawEllipse($white, $null, [System.Windows.Point]::new(184, 184), 54, 54)
+    $t = [System.Windows.Media.TransformGroup]::new()
+    $t.Children.Add([System.Windows.Media.ScaleTransform]::new(1.15, 1.15))
+    $t.Children.Add([System.Windows.Media.TranslateTransform]::new(126.5, 126.5))
+    $dc.PushTransform($t)
+    $dc.DrawGeometry($orange, $null, $arrows)
+    $dc.Pop()
 
     $dc.Pop(); $dc.Close()
 
