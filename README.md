@@ -1,10 +1,24 @@
 # ClaudeSessionManager
 
+<img src="tools/icon-preview.png" width="96" align="right" alt="Icona" />
+
 Programma Windows (WPF, .NET 10) per **esportare e importare le sessioni di Claude Code** create con l'app desktop Claude (scheda *Code*).
 
 Serve per:
 - fare il **backup** delle sessioni in un posto sicuro (es. un repository privato);
 - **passare una sessione a un collega**, che la ritrova nell'app Claude e può continuare a lavorarci con tutto il contesto.
+
+## Download
+
+Scarica l'ultima versione dalla pagina [Releases](https://github.com/nmorrione/ClaudeSessionManager/releases/latest):
+
+| File | Quando usarlo |
+|---|---|
+| `ClaudeSessionManager-x.y.z-win-x64.exe` | Funziona su qualsiasi Windows 10/11 a 64 bit, senza installare nulla (~60 MB). |
+| `ClaudeSessionManager-x.y.z-win-x64-net10.exe` | Versione leggera (<1 MB): richiede il [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). |
+
+Non serve installazione: basta avviare l'eseguibile. Windows SmartScreen potrebbe chiedere conferma
+la prima volta, perché l'eseguibile non è firmato digitalmente.
 
 ## Dove Claude salva le sessioni
 
@@ -61,3 +75,12 @@ dotnet build ClaudeSessionManager.sln -c Release
 ```
 
 Richiede .NET 10 SDK (Windows).
+
+Eseguibili per una release:
+
+```
+dotnet publish ClaudeSessionManager\ClaudeSessionManager.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish\standalone
+dotnet publish ClaudeSessionManager\ClaudeSessionManager.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=none -o publish\framework
+```
+
+L'icona si rigenera con `powershell -STA -ExecutionPolicy Bypass -File tools\make-icon.ps1`.

@@ -26,6 +26,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        if (version is not null) Title += $" {version.Major}.{version.Minor}.{version.Build}";
+
         _exportView = CollectionViewSource.GetDefaultView(_exportRows);
         _exportView.Filter = FilterExportRow;
         _exportView.SortDescriptions.Add(new SortDescription(nameof(ExportRow.LastActivity), ListSortDirection.Descending));

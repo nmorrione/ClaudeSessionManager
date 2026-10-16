@@ -8,10 +8,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ClaudeSessionManager</AssemblyName>
     <RootNamespace>ClaudeSessionManager</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <Version>1.0.0</Version>
+    <Product>Claude Session Manager</Product>
+    <Description>Esporta e importa le sessioni di Claude Code dell'app desktop Claude.</Description>
+    <Authors>nmorrione</Authors>
   </PropertyGroup>
 
   <ItemGroup>
     <Using Include="System.IO" />
+    <Resource Include="app.ico" />
   </ItemGroup>
 
 </Project>
