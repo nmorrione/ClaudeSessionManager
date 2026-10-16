@@ -10,7 +10,7 @@
     <RootNamespace>ClaudeSessionManager</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
 
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Product>Claude Session Manager</Product>
     <Description>Esporta e importa le sessioni di Claude Code dell'app desktop Claude.</Description>
     <Authors>nmorrione</Authors>

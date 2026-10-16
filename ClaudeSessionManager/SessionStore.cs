@@ -53,11 +53,15 @@ public static class SessionStore
     public static List<AccountDir> FindAccounts()
     {
         var result = new List<AccountDir>();
-        if (!Directory.Exists(ClaudePaths.SessionsRoot)) return result;
+        // Avviato da Claude, la cartella del pacchetto e %APPDATA% sono la stessa vista:
+        // ogni <account>\<org> si tiene una volta sola, dalla prima radice in cui compare.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var acc in Directory.EnumerateDirectories(ClaudePaths.SessionsRoot))
+        foreach (var root in ClaudePaths.SessionsRoots)
+        foreach (var acc in Directory.EnumerateDirectories(root))
         foreach (var org in Directory.EnumerateDirectories(acc))
         {
+            if (!seen.Add(System.IO.Path.GetRelativePath(root, org))) continue;
             var files = Directory.GetFiles(org, "local_*.json");
             var last = files.Length > 0 ? files.Max(File.GetLastWriteTime) : Directory.GetLastWriteTime(org);
             result.Add(new AccountDir { Path = org, SessionCount = files.Length, LastWrite = last });

@@ -30,6 +30,10 @@ la prima volta, perché l'eseguibile non è firmato digitalmente.
 | Memoria del progetto | `%USERPROFILE%\.claude\projects\<cartella codificata>\memory\` |
 | Cronologia dei file (rewind) | `%USERPROFILE%\.claude\file-history\<cliId>\` |
 
+Se l'app Claude è installata da **Microsoft Store** (pacchetto MSIX), Windows reindirizza `%APPDATA%\Claude`
+nella cartella privata del pacchetto: `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude\claude-code-sessions`.
+Il programma cerca in entrambi i posti.
+
 La *cartella codificata* è il percorso del progetto con ogni carattere non alfanumerico sostituito da `-`
 (es. `C:\Source\VS\c#\cruscotto` → `C--Source-VS-c--cruscotto`).
 
