@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Windows.Media;
+using Avalonia.Media;
 
 namespace ClaudeSessionManager;
 
@@ -39,13 +39,13 @@ public sealed class ImportRow(ArchivedSession session) : Observable
     private bool _isSelected = true;
     private string _targetCwd = session.Cwd;
     private string _state = "";
-    private Brush _stateBrush = Brushes.Black;
+    private IBrush _stateBrush = Brushes.Black;
 
     public ArchivedSession Session { get; } = session;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
     public string TargetCwd { get => _targetCwd; set => Set(ref _targetCwd, value); }
     public string State { get => _state; set => Set(ref _state, value); }
-    public Brush StateBrush { get => _stateBrush; set => Set(ref _stateBrush, value); }
+    public IBrush StateBrush { get => _stateBrush; set => Set(ref _stateBrush, value); }
 
     public string Title => Session.Title;
     public string SourceCwd => Session.Cwd;

@@ -2,23 +2,31 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ClaudeSessionManager</AssemblyName>
     <RootNamespace>ClaudeSessionManager</RootNamespace>
-    <ApplicationIcon>app.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
 
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <Product>Claude Session Manager</Product>
     <Description>Esporta e importa le sessioni di Claude Code dell'app desktop Claude.</Description>
     <Authors>nmorrione</Authors>
   </PropertyGroup>
 
   <ItemGroup>
-    <Using Include="System.IO" />
-    <Resource Include="app.ico" />
+    <!-- icon.ico (exe Windows), AppIcon.icns (app macOS) e icon.png (finestra)
+         si rigenerano con tools\make-icon.ps1 -->
+    <AvaloniaResource Include="Assets\icon.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
   </ItemGroup>
 
 </Project>

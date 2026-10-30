@@ -1,0 +1,116 @@
+# Compila ClaudeSessionManager per Windows e macOS (Apple Silicon), prova che gli eseguibili partano
+# e, se il push è un tag "v*" (es. v1.1.0), pubblica la Release con tutti i file.
+# Avviabile anche a mano da GitHub (Actions > Build > Run workflow): in quel caso
+# i file compilati restano scaricabili come artifact, senza creare una Release.
+
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PROJECT: ClaudeSessionManager/ClaudeSessionManager.csproj
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Versione
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$PROJECT")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Pubblica exe completo e leggero
+        run: |
+          dotnet publish $env:PROJECT -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:Version=$env:VERSION -o out\standalone
+          dotnet publish $env:PROJECT -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -p:Version=$env:VERSION -o out\framework
+
+      - name: Prova che parta
+        run: |
+          $out = & .\out\standalone\ClaudeSessionManager.exe --list | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0 -or $out -notmatch 'sessioni trovate') { exit 1 }
+
+      - name: Rinomina
+        run: |
+          Move-Item out\standalone\ClaudeSessionManager.exe "ClaudeSessionManager-$env:VERSION-win-x64.exe"
+          Move-Item out\framework\ClaudeSessionManager.exe "ClaudeSessionManager-$env:VERSION-win-x64-net10.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ClaudeSessionManager-*-win-x64*.exe
+
+  macos:
+    runs-on: macos-latest   # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Versione
+        run: |
+          VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$PROJECT")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Pubblica
+        run: dotnet publish "$PROJECT" -c Release -r osx-arm64 --self-contained -p:DebugType=none -p:Version=$VERSION -o out
+
+      - name: Crea ClaudeSessionManager.app
+        run: |
+          APP=ClaudeSessionManager.app
+          mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
+          cp -R out/. $APP/Contents/MacOS/
+          sed "s/__VERSION__/$VERSION/g" .github/macos/Info.plist > $APP/Contents/Info.plist
+          cp ClaudeSessionManager/Assets/AppIcon.icns $APP/Contents/Resources/
+          # Firma ad-hoc (gratuita): prima ogni file in Contents/MacOS (anche le .dll, che macOS
+          # considera parti del codice), poi il bundle, che firma anche l'eseguibile principale
+          find $APP/Contents/MacOS -type f ! -path "$APP/Contents/MacOS/ClaudeSessionManager" -print0 \
+            | xargs -0 codesign --force --sign -
+          codesign --force --sign - $APP
+          codesign --verify --deep --strict --verbose=2 $APP
+
+      - name: Prova che parta
+        run: |
+          OUT=$(ClaudeSessionManager.app/Contents/MacOS/ClaudeSessionManager --list)
+          echo "$OUT"
+          echo "$OUT" | grep -q "sessioni trovate"
+
+      - name: Comprimi
+        run: ditto -c -k --keepParent ClaudeSessionManager.app "ClaudeSessionManager-$VERSION-macOS-AppleSilicon.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ClaudeSessionManager-*-macOS-AppleSilicon.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Pubblica la Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            ClaudeSessionManager-*-win-x64.exe ClaudeSessionManager-*-win-x64-net10.exe ClaudeSessionManager-*-macOS-AppleSilicon.zip \
+            --title "Claude Session Manager ${GITHUB_REF_NAME#v}" \
+            --notes-file .github/release-notes.md

@@ -1,0 +1,109 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:ClaudeSessionManager"
+        x:Class="ClaudeSessionManager.MainWindow"
+        Title="Claude Session Manager" Width="1200" Height="720"
+        MinWidth="800" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Icon="avares://ClaudeSessionManager/Assets/icon.png">
+  <DockPanel>
+
+    <!-- Barra di stato -->
+    <Border DockPanel.Dock="Bottom" BorderBrush="#D0D0D0" BorderThickness="0,1,0,0" Padding="10,6" Background="#F7F7F7">
+      <Grid ColumnDefinitions="*,260">
+        <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <ProgressBar x:Name="Progress" Grid.Column="1" Height="14" Minimum="0" Maximum="100" />
+      </Grid>
+    </Border>
+
+    <TabControl Margin="8">
+
+      <!-- ============================== ESPORTA ============================== -->
+      <TabItem Header="Esporta">
+        <DockPanel Margin="0,8,0,0">
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="14" Margin="0,0,0,8">
+            <TextBox x:Name="FilterBox" Width="320" PlaceholderText="Filtra per titolo o cartella..." />
+            <CheckBox x:Name="ShowArchived" Content="Mostra archiviate" IsChecked="True" />
+            <CheckBox x:Name="ShowScratch" Content="Mostra sessioni senza cartella" />
+            <Button Content="Aggiorna" Click="Refresh_Click" />
+          </StackPanel>
+
+          <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" LastChildFill="False">
+            <Button Content="Seleziona tutte" Click="ExportSelectAll_Click" Margin="0,0,6,0" />
+            <Button Content="Deseleziona" Click="ExportSelectNone_Click" Margin="0,0,6,0" />
+            <TextBlock x:Name="SelectionText" VerticalAlignment="Center" Margin="8,0" Foreground="#555" />
+            <Button DockPanel.Dock="Right" Content="Esporta selezionate..." Click="Export_Click" Classes="accent" />
+            <CheckBox DockPanel.Dock="Right" x:Name="IncludeHistory" Content="Includi cronologia file (rewind)" Margin="0,0,14,0" />
+            <CheckBox DockPanel.Dock="Right" x:Name="IncludeMemory" Content="Includi memoria di progetto" IsChecked="True" Margin="0,0,14,0" />
+          </DockPanel>
+
+          <DataGrid x:Name="ExportGrid" x:DataType="local:ExportRow" IsReadOnly="False" SelectionMode="Extended">
+            <DataGrid.Columns>
+              <DataGridTemplateColumn Width="40" CanUserSort="False">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate x:DataType="local:ExportRow">
+                    <CheckBox HorizontalAlignment="Center" IsChecked="{Binding IsSelected}"
+                              IsEnabled="{Binding CanExport}" Click="ExportCheck_Click" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTextColumn Header="Titolo" Binding="{Binding Title}" Width="260" IsReadOnly="True" />
+              <DataGridTextColumn Header="Cartella progetto" Binding="{Binding Cwd}" Width="*" IsReadOnly="True" />
+              <DataGridTextColumn Header="Ultima attività" Binding="{Binding LastActivity, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="140" IsReadOnly="True" />
+              <DataGridTextColumn Header="MB" Binding="{Binding SizeMb, StringFormat='{}{0:N1}'}" Width="70" IsReadOnly="True" />
+              <DataGridTextColumn Header="Account" Binding="{Binding Account}" Width="140" IsReadOnly="True" />
+              <DataGridTextColumn Header="Stato" Binding="{Binding State}" Width="150" IsReadOnly="True" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================== IMPORTA ============================== -->
+      <TabItem Header="Importa">
+        <DockPanel Margin="0,8,0,0">
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+            <Button Content="Apri archivio..." Click="OpenArchive_Click" />
+            <TextBlock x:Name="ZipText" Text="Nessun archivio aperto." VerticalAlignment="Center" />
+          </StackPanel>
+
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0" Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="Account dell'app di destinazione:" VerticalAlignment="Center" />
+              <ComboBox x:Name="AccountBox" Width="520" />
+            </StackPanel>
+            <DockPanel LastChildFill="False">
+              <Button Content="Seleziona tutte" Click="ImportSelectAll_Click" Margin="0,0,6,0" />
+              <Button Content="Deseleziona" Click="ImportSelectNone_Click" Margin="0,0,6,0" />
+              <Button Content="Scegli cartella per le righe evidenziate..." Click="BrowseTarget_Click" />
+              <Button x:Name="ImportButton" DockPanel.Dock="Right" Content="Importa selezionate"
+                      Click="Import_Click" IsEnabled="False" Classes="accent" />
+            </DockPanel>
+          </StackPanel>
+
+          <DataGrid x:Name="ImportGrid" x:DataType="local:ImportRow" IsReadOnly="False" SelectionMode="Extended">
+            <DataGrid.Columns>
+              <DataGridTemplateColumn Width="40" CanUserSort="False">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate x:DataType="local:ImportRow">
+                    <CheckBox HorizontalAlignment="Center" IsChecked="{Binding IsSelected}" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+              <DataGridTextColumn Header="Titolo" Binding="{Binding Title}" Width="240" IsReadOnly="True" />
+              <DataGridTextColumn Header="Cartella originale" Binding="{Binding SourceCwd}" Width="260" IsReadOnly="True" />
+              <DataGridTextColumn Header="Cartella su questo computer (doppio clic per modificare)" Binding="{Binding TargetCwd}" Width="*" />
+              <DataGridTextColumn Header="Ultima attività" Binding="{Binding LastActivity, StringFormat='{}{0:dd/MM/yyyy HH:mm}'}" Width="140" IsReadOnly="True" />
+              <DataGridTemplateColumn Header="Stato" Width="190" SortMemberPath="State">
+                <DataGridTemplateColumn.CellTemplate>
+                  <DataTemplate x:DataType="local:ImportRow">
+                    <TextBlock Text="{Binding State}" Foreground="{Binding StateBrush}" VerticalAlignment="Center" Margin="8,0" />
+                  </DataTemplate>
+                </DataGridTemplateColumn.CellTemplate>
+              </DataGridTemplateColumn>
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

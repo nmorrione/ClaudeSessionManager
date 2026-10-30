@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Input;
-using System.Windows.Media;
-using Microsoft.Win32;
+using Avalonia;
+using Avalonia.Collections;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace ClaudeSessionManager;
 
@@ -13,14 +16,16 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<ExportRow> _exportRows = [];
     private readonly ObservableCollection<ImportRow> _importRows = [];
-    private readonly ICollectionView _exportView;
+    private readonly DataGridCollectionView _exportView;
 
     private string? _zipPath;
     private ArchiveManifest? _manifest;
 
-    private static readonly Brush Ok = Brushes.DarkGreen;
-    private static readonly Brush Warn = Brushes.DarkOrange;
-    private static readonly Brush Bad = Brushes.Firebrick;
+    private static readonly IBrush Ok = Brushes.DarkGreen;
+    private static readonly IBrush Warn = Brushes.DarkOrange;
+    private static readonly IBrush Bad = Brushes.Firebrick;
+
+    private static readonly FilePickerFileType ZipType = new("Archivio sessioni Claude") { Patterns = ["*.zip"] };
 
     public MainWindow()
     {
@@ -29,14 +34,20 @@ public partial class MainWindow : Window
         var version = typeof(MainWindow).Assembly.GetName().Version;
         if (version is not null) Title += $" {version.Major}.{version.Minor}.{version.Build}";
 
-        _exportView = CollectionViewSource.GetDefaultView(_exportRows);
-        _exportView.Filter = FilterExportRow;
-        _exportView.SortDescriptions.Add(new SortDescription(nameof(ExportRow.LastActivity), ListSortDirection.Descending));
+        _exportView = new DataGridCollectionView(_exportRows) { Filter = FilterExportRow };
+        _exportView.SortDescriptions.Add(DataGridSortDescription.FromPath(nameof(ExportRow.LastActivity), ListSortDirection.Descending));
         ExportGrid.ItemsSource = _exportView;
         ImportGrid.ItemsSource = _importRows;
-    }
 
-    private void Window_Loaded(object sender, RoutedEventArgs e) => RefreshSessions();
+        FilterBox.TextChanged += (_, _) => ApplyFilter();
+        ShowArchived.IsCheckedChanged += (_, _) => ApplyFilter();
+        ShowScratch.IsCheckedChanged += (_, _) => ApplyFilter();
+        AccountBox.SelectionChanged += (_, _) => UpdateImportStates();
+        // Il binding si aggiorna dopo la fine della modifica.
+        ImportGrid.CellEditEnded += (_, _) => Dispatcher.UIThread.Post(UpdateImportStates);
+
+        Opened += (_, _) => RefreshSessions();
+    }
 
     // ================================================================== ESPORTA
 
@@ -51,11 +62,13 @@ public partial class MainWindow : Window
 
             FillAccounts();
             UpdateSelectionText();
-            SetStatus($"{_exportRows.Count} sessioni trovate.");
+            SetStatus(ClaudePaths.SessionsRoots.Count == 0
+                ? "Non trovo la cartella delle sessioni dell'app Claude su questo computer."
+                : $"{_exportRows.Count} sessioni trovate.");
         }
         catch (Exception ex)
         {
-            ShowError("Errore durante la lettura delle sessioni", ex);
+            _ = ShowErrorAsync("Errore durante la lettura delle sessioni", ex);
         }
     }
 
@@ -65,36 +78,33 @@ public partial class MainWindow : Window
         if (ShowArchived.IsChecked != true && r.Session.Archived) return false;
         if (ShowScratch.IsChecked != true && ClaudePaths.IsScratchWorkspace(r.Cwd)) return false;
 
-        var f = FilterBox.Text.Trim();
+        var f = (FilterBox.Text ?? "").Trim();
         return f.Length == 0 ||
                r.Title.Contains(f, StringComparison.OrdinalIgnoreCase) ||
                r.Cwd.Contains(f, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void Filter_Changed(object sender, RoutedEventArgs e)
+    private void ApplyFilter()
     {
-        if (!IsLoaded) return;
         _exportView.Refresh();
         UpdateSelectionText();
     }
 
-    private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshSessions();
+    private void Refresh_Click(object? sender, RoutedEventArgs e) => RefreshSessions();
 
-    private IEnumerable<ExportRow> VisibleExportRows => _exportView.Cast<ExportRow>();
-
-    private void ExportSelectAll_Click(object sender, RoutedEventArgs e)
+    private void ExportSelectAll_Click(object? sender, RoutedEventArgs e)
     {
-        foreach (var r in VisibleExportRows) r.IsSelected = true;
+        foreach (var r in _exportView.OfType<ExportRow>()) r.IsSelected = true;
         UpdateSelectionText();
     }
 
-    private void ExportSelectNone_Click(object sender, RoutedEventArgs e)
+    private void ExportSelectNone_Click(object? sender, RoutedEventArgs e)
     {
         foreach (var r in _exportRows) r.IsSelected = false;
         UpdateSelectionText();
     }
 
-    private void ExportCheck_Click(object sender, RoutedEventArgs e) => UpdateSelectionText();
+    private void ExportCheck_Click(object? sender, RoutedEventArgs e) => UpdateSelectionText();
 
     private void UpdateSelectionText()
     {
@@ -102,25 +112,27 @@ public partial class MainWindow : Window
         SelectionText.Text = $"{sel.Count} selezionate ({sel.Sum(r => r.SizeMb):N1} MB non compressi)";
     }
 
-    private async void Export_Click(object sender, RoutedEventArgs e)
+    private async void Export_Click(object? sender, RoutedEventArgs e)
     {
         var selected = _exportRows.Where(r => r.IsSelected).Select(r => r.Session).ToList();
         if (selected.Count == 0)
         {
-            MessageBox.Show(this, "Seleziona almeno una sessione.", Title, MessageBoxButton.OK, MessageBoxImage.Information);
+            await MessageAsync("Seleziona almeno una sessione.");
             return;
         }
 
-        var dlg = new SaveFileDialog
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Filter = "Archivio sessioni Claude (*.zip)|*.zip",
-            FileName = $"claude-sessions-{DateTime.Now:yyyyMMdd-HHmm}.zip",
-        };
-        if (dlg.ShowDialog(this) != true) return;
+            Title = "Esporta sessioni",
+            SuggestedFileName = $"claude-sessions-{DateTime.Now:yyyyMMdd-HHmm}.zip",
+            DefaultExtension = "zip",
+            FileTypeChoices = [ZipType],
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
 
         var options = new ExportOptions(IncludeHistory.IsChecked == true, IncludeMemory.IsChecked == true);
-        if (await RunBusy(p => SessionArchive.Export(selected, dlg.FileName, options, p)))
-            SetStatus($"Esportate {selected.Select(s => s.LocalId).Distinct().Count()} sessioni in {dlg.FileName}");
+        if (await RunBusy(p => SessionArchive.Export(selected, path, options, p)))
+            SetStatus($"Esportate {selected.Select(s => s.LocalId).Distinct().Count()} sessioni in {path}");
     }
 
     // ================================================================== IMPORTA
@@ -135,19 +147,24 @@ public partial class MainWindow : Window
         AccountBox.SelectedIndex = idx >= 0 ? idx : 0;
     }
 
-    private void OpenArchive_Click(object sender, RoutedEventArgs e)
+    private async void OpenArchive_Click(object? sender, RoutedEventArgs e)
     {
-        var dlg = new OpenFileDialog { Filter = "Archivio sessioni Claude (*.zip)|*.zip" };
-        if (dlg.ShowDialog(this) != true) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Apri archivio di sessioni",
+            AllowMultiple = false,
+            FileTypeFilter = [ZipType],
+        });
+        if (files is not [var file] || file.TryGetLocalPath() is not { } path) return;
 
         try
         {
-            _manifest = SessionArchive.ReadManifest(dlg.FileName);
-            _zipPath = dlg.FileName;
+            _manifest = SessionArchive.ReadManifest(path);
+            _zipPath = path;
         }
         catch (Exception ex)
         {
-            ShowError("Archivio non valido", ex);
+            await ShowErrorAsync("Archivio non valido", ex);
             return;
         }
 
@@ -161,37 +178,35 @@ public partial class MainWindow : Window
         ImportButton.IsEnabled = _importRows.Count > 0;
     }
 
-    private void Account_Changed(object sender, SelectionChangedEventArgs e) => UpdateImportStates();
-
-    private void ImportGrid_CellEditEnding(object? sender, DataGridCellEditEndingEventArgs e) =>
-        // Il binding si aggiorna dopo questo evento.
-        Dispatcher.BeginInvoke(UpdateImportStates);
-
-    private void ImportSelectAll_Click(object sender, RoutedEventArgs e)
+    private void ImportSelectAll_Click(object? sender, RoutedEventArgs e)
     {
         foreach (var r in _importRows) r.IsSelected = true;
     }
 
-    private void ImportSelectNone_Click(object sender, RoutedEventArgs e)
+    private void ImportSelectNone_Click(object? sender, RoutedEventArgs e)
     {
         foreach (var r in _importRows) r.IsSelected = false;
     }
 
-    private void BrowseTarget_Click(object sender, RoutedEventArgs e)
+    private async void BrowseTarget_Click(object? sender, RoutedEventArgs e)
     {
         var rows = ImportGrid.SelectedItems.OfType<ImportRow>().ToList();
         if (rows.Count == 0)
         {
-            MessageBox.Show(this, "Evidenzia prima una o più righe (clic, Ctrl+clic, Maiusc+clic).", Title,
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            await MessageAsync("Evidenzia prima una o più righe (clic, Ctrl/Cmd+clic, Maiusc+clic).");
             return;
         }
 
-        var dlg = new OpenFolderDialog { Title = "Cartella del progetto su questo PC" };
-        if (Directory.Exists(rows[0].TargetCwd)) dlg.InitialDirectory = rows[0].TargetCwd;
-        if (dlg.ShowDialog(this) != true) return;
+        var start = Directory.Exists(rows[0].TargetCwd) ? await StorageProvider.TryGetFolderFromPathAsync(rows[0].TargetCwd) : null;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Cartella del progetto su questo computer",
+            AllowMultiple = false,
+            SuggestedStartLocation = start,
+        });
+        if (folders is not [var folder] || folder.TryGetLocalPath() is not { } path) return;
 
-        foreach (var r in rows) r.TargetCwd = dlg.FolderName;
+        foreach (var r in rows) r.TargetCwd = path.TrimEnd('/', '\\');
         UpdateImportStates();
     }
 
@@ -209,25 +224,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void Import_Click(object sender, RoutedEventArgs e)
+    private async void Import_Click(object? sender, RoutedEventArgs e)
     {
         if (_zipPath is null || _manifest is null) return;
         if (AccountBox.SelectedItem is not AccountDir account)
         {
-            MessageBox.Show(this, "Non trovo la cartella dell'app desktop su questo PC.\nApri almeno una volta la scheda Code dell'app Claude e riprova.",
-                Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            await MessageAsync("Non trovo la cartella dell'app Claude su questo computer.\nApri almeno una volta la scheda Code dell'app Claude e riprova.");
             return;
         }
 
-        ImportGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        ImportGrid.CommitEdit();
         var rows = _importRows.Where(r => r.IsSelected).ToList();
         if (rows.Count == 0) return;
 
         var invalid = rows.FirstOrDefault(r => !r.HasValidTarget);
         if (invalid is not null)
         {
-            MessageBox.Show(this, $"La cartella di destinazione di \"{invalid.Title}\" non è valida.", Title,
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            await MessageAsync($"La cartella di destinazione di \"{invalid.Title}\" non è valida.");
             return;
         }
 
@@ -235,7 +248,7 @@ public partial class MainWindow : Window
         int overwrite = items.Count(i => SessionArchive.Exists(i.Session, account.Path, i.TargetCwd));
         var msg = $"Importare {items.Count} sessioni nell'account {account.ShortId}?";
         if (overwrite > 0) msg += $"\n\n{overwrite} sono già presenti e verranno sovrascritte (chiudile nell'app prima di procedere).";
-        if (MessageBox.Show(this, msg, Title, MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+        if (!await ConfirmAsync(msg, "Importa", "Annulla")) return;
 
         ImportResult? result = null;
         var zip = _zipPath;
@@ -244,7 +257,7 @@ public partial class MainWindow : Window
 
         var text = $"Importate {result.Imported} sessioni.\n\nSe non compaiono subito nell'app Claude, chiudila e riaprila.";
         if (result.Warnings.Count > 0) text += "\n\nAvvisi:\n- " + string.Join("\n- ", result.Warnings);
-        MessageBox.Show(this, text, Title, MessageBoxButton.OK, MessageBoxImage.Information);
+        await MessageAsync(text);
 
         RefreshSessions();
         UpdateImportStates();
@@ -255,7 +268,7 @@ public partial class MainWindow : Window
     private async Task<bool> RunBusy(Action<IProgress<(int Percent, string Message)>> work)
     {
         IsEnabled = false;
-        Mouse.OverrideCursor = Cursors.Wait;
+        Cursor = new Cursor(StandardCursorType.Wait);
         var progress = new Progress<(int Percent, string Message)>(p =>
         {
             Progress.Value = Math.Clamp(p.Percent, 0, 100);
@@ -268,12 +281,12 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ShowError("Operazione non riuscita", ex);
+            await ShowErrorAsync("Operazione non riuscita", ex);
             return false;
         }
         finally
         {
-            Mouse.OverrideCursor = null;
+            Cursor = Cursor.Default;
             IsEnabled = true;
             Progress.Value = 0;
         }
@@ -281,9 +294,44 @@ public partial class MainWindow : Window
 
     private void SetStatus(string text) => StatusText.Text = text;
 
-    private void ShowError(string title, Exception ex)
+    private async Task ShowErrorAsync(string title, Exception ex)
     {
         SetStatus(title + ": " + ex.Message);
-        MessageBox.Show(this, ex.Message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+        await MessageAsync($"{title}\n\n{ex.Message}");
+    }
+
+    private Task MessageAsync(string message) => ConfirmAsync(message, "OK", null);
+
+    /// <summary>Finestrella con un messaggio e uno o due pulsanti; true se si sceglie il primo.</summary>
+    private async Task<bool> ConfirmAsync(string message, string yes, string? no)
+    {
+        bool result = false;
+        var dialog = new Window
+        {
+            Title = Title,
+            Icon = Icon,
+            Width = 480,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        var btnYes = new Button { Content = yes, MinWidth = 100, Classes = { "accent" } };
+        btnYes.Click += (_, _) => { result = true; dialog.Close(); };
+        buttons.Children.Add(btnYes);
+        if (no is not null)
+        {
+            var btnNo = new Button { Content = no, MinWidth = 100 };
+            btnNo.Click += (_, _) => dialog.Close();
+            buttons.Children.Add(btnNo);
+        }
+        dialog.Content = new StackPanel
+        {
+            Margin = new Thickness(16),
+            Spacing = 16,
+            Children = { new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, buttons },
+        };
+        await dialog.ShowDialog(this);
+        return result;
     }
 }
